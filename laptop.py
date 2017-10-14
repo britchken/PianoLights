@@ -10,9 +10,9 @@ import math
 
 def get_N_HexCol(N):
 
-    HSV_tuples = [(0.5*x/N, 1, 1) for x in xrange(N)]
+    HSV_tuples = [(0.5*x/N, 1, 1) for x in range(N)]
     hex_out = []
-    
+
     for rgb in HSV_tuples:
         rgb = map(lambda x: int(x*255),colorsys.hsv_to_rgb(*rgb))
         hex_out.append(rgb)
@@ -21,8 +21,6 @@ def get_N_HexCol(N):
 
 colors = get_N_HexCol(88)
 
-ser = serial.Serial('COM3')
-print(ser.name)
 
 from pygame.locals import *
 # display a list of MIDI devices connected to the computer
@@ -44,6 +42,10 @@ event_post = pygame.fastevent.post
 pygame.midi.init()
 print ("Available MIDI devices:")
 print_device_info();
+
+ser = serial.Serial('COM3', baudrate=9600)
+print(ser.name)
+
 # Change this to override use of default input device
 device_id = None
 if device_id is None:
@@ -53,51 +55,45 @@ else:
 print ("Using input_id: %s" % input_id)
 i = pygame.midi.Input( input_id )
 print ("Logging started:")
-going = True
 
 pressed = [0]*109
 
 
 #Animation
 os.environ['SDL_VIDEO_WINDOW_POS'] = "%d,%d" % (15,40)
-windowSurface = pygame.display.set_mode((1400, 800), 0, 32)
+windowSurface = pygame.display.set_mode((100, 100), 0, 32)
 pygame.display.set_caption('Piano lights!')
 BLACK = (30, 30, 30)
 windowSurface.fill(BLACK)
 pygame.display.update()
 
-while going:
+while True:
     events = event_get()
     for e in events:
-        if e.type in [QUIT]:
-            going = False
-        if e.type in [KEYDOWN]:
-            going = False
         if e.type in [pygame.midi.MIDIIN]:
             # print information to console
             if (e.data2 > 0) and (e.data1 != 64) and (e.data1 >= 21) and (e.data1 <= 108):
                 #Pos and col for drawing on laptop
-                pos = (int(round((e.data1 - 21) * 1400 / 88)), int(round(700 - 5 * e.data2)))
-                col = colors[int(e.data1 - 21)]
+                #pos = (int(round((e.data1 - 21) * 1400 / 88)), int(round(700 - 5 * e.data2)))
+                #col = colors[int(e.data1 - 21)]
                 if not pressed[e.data1]:
-                    print ("Timestamp: " + str(e.timestamp) + "ms, Channel: " + str(e.data1) + ", Value: " + str(e.data2))
+                    #print ("Timestamp: " + str(e.timestamp) + "ms, Channel: " + str(e.data1) + ", Value: " + str(e.data2))
                     pressed[e.data1] = 1
-                    pygame.draw.circle(windowSurface, col, pos, 8, 0)
-                    ser.write(chr(e.data1 - 21))
+                    ser.write((e.data1 - 21).to_bytes(1, 'big'))
                 else:
                     pressed[e.data1] = 0
-                    ser.write(chr(e.data1 - 21 + 88))
-                    pygame.draw.rect(windowSurface, BLACK, (pos[0]-8, 0, 16, 800), 0)
-                    if e.data1 == 21:
-                        pygame.draw.rect(windowSurface, BLACK, (0, 0, 1400, 800), 0)
-                        pressed = [0] * 109
-                        print("CLEAR")
-                        
-                pygame.display.update()
-                    
+                    ser.write((e.data1 - 21 + 88).to_bytes(1, 'big'))
+
+        elif (e.type == pygame.KEYDOWN):
+            if (e.key == 114):
+                print('Sending Reset')
+                ser.write((1).to_bytes(1,'big'))
+                pressed = [0] * 109
+
+
     # if there are new data from the MIDI controller
     if i.poll():
-        midi_events = i.read(10)
+        midi_events = i.read(1024)
         midi_evs = pygame.midi.midis2events(midi_events, i.device_id)
         for m_e in midi_evs:
             event_post( m_e )
