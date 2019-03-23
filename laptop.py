@@ -3,26 +3,18 @@ import sys
 import os
 import pygame
 import pygame.midi
-import colorsys
 import random
 import serial
 import math
-
-def get_N_HexCol(N):
-
-    HSV_tuples = [(0.5*x/N, 1, 1) for x in range(N)]
-    hex_out = []
-
-    for rgb in HSV_tuples:
-        rgb = map(lambda x: int(x*255),colorsys.hsv_to_rgb(*rgb))
-        hex_out.append(rgb)
-    return hex_out
-
-
-colors = get_N_HexCol(88)
-
+from time import sleep
 
 from pygame.locals import *
+
+import socket
+s = socket.socket()
+host = '10.0.0.65'
+port = 12345
+
 # display a list of MIDI devices connected to the computer
 def print_device_info():
     for i in range( pygame.midi.get_count() ):
@@ -43,57 +35,65 @@ pygame.midi.init()
 print ("Available MIDI devices:")
 print_device_info();
 
-ser = serial.Serial('COM3', baudrate=9600)
+ser = serial.Serial('/dev/tty.usbmodem1421', baudrate=9600)
 print(ser.name)
 
 # Change this to override use of default input device
-device_id = None
+device_id = 1
 if device_id is None:
     input_id = pygame.midi.get_default_input_id()
 else:
     input_id = device_id
 print ("Using input_id: %s" % input_id)
-i = pygame.midi.Input( input_id )
+inn = pygame.midi.Input( input_id )
 print ("Logging started:")
 
-pressed = [0]*109
 
+def to_bytes(n, length, endianess='big'):
+    h = '%x' % n
+    s = ('0'*(len(h) % 2) + h).zfill(length*2).decode('hex')
+    return s if endianess == 'big' else s[::-1]
 
-#Animation
-os.environ['SDL_VIDEO_WINDOW_POS'] = "%d,%d" % (15,40)
-windowSurface = pygame.display.set_mode((100, 100), 0, 32)
-pygame.display.set_caption('Piano lights!')
-BLACK = (30, 30, 30)
-windowSurface.fill(BLACK)
-pygame.display.update()
-
+color_stack = []
+counter = [300]*88
 while True:
+
+    counter = [i + 1 for i in counter]
+    expired = [i for (i,j) in enumerate(counter) if counter[i] == 200]
+    for i in expired:
+        #print(str(i) + " expired!")
+        if i in color_stack:
+            color_stack.remove(i)
+
     events = event_get()
     for e in events:
         if e.type in [pygame.midi.MIDIIN]:
-            # print information to console
-            if (e.data2 > 0) and (e.data1 != 64) and (e.data1 >= 21) and (e.data1 <= 108):
-                #Pos and col for drawing on laptop
-                #pos = (int(round((e.data1 - 21) * 1400 / 88)), int(round(700 - 5 * e.data2)))
-                #col = colors[int(e.data1 - 21)]
-                if not pressed[e.data1]:
+            if (e.data2 > 0) and (e.data1 >= 21) and (e.data1 <= 108):
+                key = e.data1 - 21
+                counter[key] = 0
+                # if key is not in the stack and it is a key PRESS (not release)
+                if not key in color_stack and e.status == 144:
                     #print ("Timestamp: " + str(e.timestamp) + "ms, Channel: " + str(e.data1) + ", Value: " + str(e.data2))
-                    pressed[e.data1] = 1
-                    ser.write((e.data1 - 21).to_bytes(1, 'big'))
+                    color_stack.append(key)
                 else:
-                    pressed[e.data1] = 0
-                    ser.write((e.data1 - 21 + 88).to_bytes(1, 'big'))
-
-        elif (e.type == pygame.KEYDOWN):
-            if (e.key == 114):
-                print('Sending Reset')
-                ser.write((1).to_bytes(1,'big'))
-                pressed = [0] * 109
-
+                    if key in color_stack:
+                        color_stack.remove(key)
 
     # if there are new data from the MIDI controller
-    if i.poll():
-        midi_events = i.read(1024)
-        midi_evs = pygame.midi.midis2events(midi_events, i.device_id)
+    if inn.poll():
+        midi_events = inn.read(1024)
+        midi_evs = pygame.midi.midis2events(midi_events, inn.device_id)
         for m_e in midi_evs:
             event_post( m_e )
+
+    if (14 in color_stack) and (77 in color_stack) and len(color_stack) == 2:
+        ser.write(to_bytes(1, 1))
+        sleep(1)
+        s.connect((host, port))
+        sys.exit(0)
+    elif (len(color_stack) > 0):
+        key = int(255-(color_stack[-1])*2.8) # 2.3 is arbitrary number for color
+        ser.write(to_bytes(key, 1))
+    else:
+        ser.write(to_bytes(0, 1))
+    sleep(0.025)
