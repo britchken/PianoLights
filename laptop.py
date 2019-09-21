@@ -35,11 +35,11 @@ pygame.midi.init()
 print ("Available MIDI devices:")
 print_device_info();
 
-ser = serial.Serial('/dev/tty.usbmodem1421', baudrate=9600)
+ser = serial.Serial('/dev/tty.usbmodem14201', baudrate=9600)
 print(ser.name)
 
 # Change this to override use of default input device
-device_id = 1
+device_id = 0
 if device_id is None:
     input_id = pygame.midi.get_default_input_id()
 else:
